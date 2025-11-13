@@ -78,3 +78,6 @@ _ReSharper*/
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test Data - 測試數據目錄（排除所有檔案）
+TestData/
