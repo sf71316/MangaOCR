@@ -7,6 +7,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MangaOCR", "MangaOCR\MangaO
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MangaOCR.Tests", "MangaOCR.Tests\MangaOCR.Tests.csproj", "{A43B9645-F2BD-453A-BAFC-3CDA83E8AF1A}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "MangaOCR.Core", "MangaOCR.Core\MangaOCR.Core.csproj", "{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -41,6 +43,18 @@ Global
 		{A43B9645-F2BD-453A-BAFC-3CDA83E8AF1A}.Release|x64.Build.0 = Release|Any CPU
 		{A43B9645-F2BD-453A-BAFC-3CDA83E8AF1A}.Release|x86.ActiveCfg = Release|Any CPU
 		{A43B9645-F2BD-453A-BAFC-3CDA83E8AF1A}.Release|x86.Build.0 = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|x64.Build.0 = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Debug|x86.Build.0 = Debug|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|Any CPU.Build.0 = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|x64.ActiveCfg = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|x64.Build.0 = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|x86.ActiveCfg = Release|Any CPU
+		{0BFF2E21-190F-49F6-A3ED-6F43C99929F6}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

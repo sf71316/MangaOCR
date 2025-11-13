@@ -1,3 +1,4 @@
+using MangaOCR.Models;
 using MangaOCR.Services;
 using Xunit;
 
@@ -13,8 +14,21 @@ public class PaddleOcrServiceTests : IDisposable
 
     public PaddleOcrServiceTests()
     {
-        // 初始化OCR服務（不使用預處理以獲得更好效果）
-        _ocrService = new PaddleOcrService(usePreprocessing: false);
+        // 初始化OCR服務（使用優化後的配置）
+        var settings = new OcrSettings
+        {
+            Provider = OcrProvider.PaddleOCR,
+            Language = "Japanese",
+            UsePreprocessing = false,
+            AllowRotateDetection = true,
+            Enable180Classification = true,
+            UnclipRatio = 1.5f,
+            MaxSize = 1024,
+            BoxScoreThreshold = 0.6f,
+            Threshold = 0.3f,
+            MinConfidence = 0.5f
+        };
+        _ocrService = new PaddleOcrService(settings);
 
         // 設定測試圖片路徑
         _testImagePath = FindTestImage();
@@ -179,8 +193,11 @@ public class PaddleOcrServiceTests : IDisposable
     [Fact]
     public void Constructor_WithPreprocessingEnabled_ShouldInitialize()
     {
+        // Arrange
+        var settings = new OcrSettings { UsePreprocessing = true };
+
         // Act & Assert
-        using var service = new PaddleOcrService(usePreprocessing: true);
+        using var service = new PaddleOcrService(settings);
         var result = service.RecognizeText(_testImagePath);
         Assert.True(result.Success);
     }
@@ -188,8 +205,11 @@ public class PaddleOcrServiceTests : IDisposable
     [Fact]
     public void Constructor_WithPreprocessingDisabled_ShouldInitialize()
     {
+        // Arrange
+        var settings = new OcrSettings { UsePreprocessing = false };
+
         // Act & Assert
-        using var service = new PaddleOcrService(usePreprocessing: false);
+        using var service = new PaddleOcrService(settings);
         var result = service.RecognizeText(_testImagePath);
         Assert.True(result.Success);
     }

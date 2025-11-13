@@ -9,10 +9,8 @@
 
   <ItemGroup>
     <PackageReference Include="coverlet.collector" Version="6.0.2" />
+    <PackageReference Include="Microsoft.Extensions.Configuration.Json" Version="10.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.12.0" />
-    <PackageReference Include="Sdcb.PaddleOCR" Version="3.0.1" />
-    <PackageReference Include="Sdcb.PaddleOCR.Models.LocalV3" Version="2.7.0.1" />
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
     <PackageReference Include="xunit" Version="2.9.2" />
     <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
   </ItemGroup>
@@ -22,7 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\MangaOCR\MangaOCR.csproj" />
+    <ProjectReference Include="..\MangaOCR.Core\MangaOCR.Core.csproj" />
   </ItemGroup>
 
 </Project>
