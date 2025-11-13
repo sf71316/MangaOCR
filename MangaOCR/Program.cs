@@ -1,6 +1,20 @@
-﻿using MangaOCR.Services;
+﻿using MangaOCR.Factories;
+using MangaOCR.Models;
+using MangaOCR.Services;
+using Microsoft.Extensions.Configuration;
 
 Console.WriteLine("=== MangaOCR - 漫畫文字識別工具 ===");
+Console.WriteLine();
+
+// 載入配置
+var configuration = new ConfigurationBuilder()
+    .SetBasePath(Directory.GetCurrentDirectory())
+    .AddJsonFile("appsettings.json", optional: true, reloadOnChange: true)
+    .Build();
+
+var ocrSettings = configuration.GetSection("OcrSettings").Get<OcrSettings>() ?? new OcrSettings();
+Console.WriteLine($"OCR引擎: {ocrSettings.Provider}");
+Console.WriteLine($"識別語言: {ocrSettings.Language}");
 Console.WriteLine();
 
 // 檢查測試圖片
@@ -46,10 +60,11 @@ if (testImagePath == null)
 Console.WriteLine($"✓ 找到測試圖片: {Path.GetFileName(testImagePath)}");
 Console.WriteLine();
 
-// 初始化OCR服務（使用原圖，不使用預處理）
-Console.WriteLine("正在初始化PaddleOCR服務...");
-Console.WriteLine("（首次使用會下載日文模型，請稍候）");
-using var ocrService = new PaddleOcrService();
+// 使用工廠模式創建OCR服務
+Console.WriteLine($"正在初始化{ocrSettings.Provider}服務...");
+Console.WriteLine("（首次使用會下載模型，請稍候）");
+var factory = new OcrServiceFactory();
+using var ocrService = factory.CreateOcrService(ocrSettings);
 Console.WriteLine("✓ OCR服務初始化完成");
 Console.WriteLine();
 
@@ -80,7 +95,7 @@ if (rawResult.Success)
     Console.WriteLine();
     Console.WriteLine("正在應用結果後處理...");
     var processor = new ResultProcessor();
-    var processedResult = processor.Process(rawResult, minConfidence: 0.6f);
+    var processedResult = processor.Process(rawResult, minConfidence: ocrSettings.MinConfidence);
 
     Console.WriteLine();
     Console.WriteLine("【後處理結果】");
@@ -93,9 +108,38 @@ if (rawResult.Success)
         Console.WriteLine($"  高信心度區域(>=70%): {highConfidenceCountProcessed}");
     }
 
-    // 顯示改善效果
+    // 顯示改善效果和被過濾的區域
     var removed = rawResult.TextRegions.Count - processedResult.TextRegions.Count;
     Console.WriteLine($"  已過濾: {removed} 個低品質區域");
+
+    if (removed > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine("【被過濾的區域】");
+
+        // 使用文字和位置來匹配，而不是物件參考
+        var processedTexts = processedResult.TextRegions
+            .Select(r => (r.Text, r.BoundingBox.X, r.BoundingBox.Y))
+            .ToHashSet();
+
+        var filteredRegions = rawResult.TextRegions
+            .Where(r => !processedTexts.Contains((r.Text, r.BoundingBox.X, r.BoundingBox.Y)))
+            .OrderByDescending(r => r.Confidence)
+            .ToList();
+
+        foreach (var region in filteredRegions.Take(10))
+        {
+            var reason = string.IsNullOrWhiteSpace(region.Text) ? "空白" :
+                        region.Confidence < 0.5f ? $"低信心度({region.Confidence:P1})" :
+                        $"重複/重疊({region.Confidence:P1})";
+            Console.WriteLine($"  ✗ [{reason}] {region.Text}");
+        }
+
+        if (filteredRegions.Count > 10)
+        {
+            Console.WriteLine($"  ... 還有 {filteredRegions.Count - 10} 個被過濾");
+        }
+    }
 
     // 分析OCR原始順序
     Console.WriteLine();
@@ -169,7 +213,8 @@ if (rawResult.Success)
     Console.WriteLine("=== 生成視覺化標註圖片 ===");
     var annotator = new ImageAnnotator();
 
-    var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "TestData");
+    // 使用測試圖片所在的目錄作為輸出目錄
+    var outputDir = Path.GetDirectoryName(testImagePath)!;
     var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
     var readingOrderOutput = Path.Combine(outputDir, $"4_reading_order_{timestamp}.png");
     var confidenceOutput = Path.Combine(outputDir, $"4_confidence_{timestamp}.png");

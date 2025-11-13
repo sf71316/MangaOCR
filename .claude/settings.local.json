@@ -21,7 +21,9 @@
       "Bash(git commit:*)",
       "Bash(dotnet script:*)",
       "Bash(dotnet clean:*)",
-      "Bash(cd:*)"
+      "Bash(cd:*)",
+      "Bash(dotnet run:*)",
+      "Bash(dir:*)"
     ],
     "deny": [],
     "ask": []

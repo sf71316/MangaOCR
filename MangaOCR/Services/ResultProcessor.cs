@@ -77,7 +77,7 @@ public class ResultProcessor : IResultProcessor
     /// <summary>
     /// 移除重疊或重複的文字區域
     /// </summary>
-    public OcrResult RemoveDuplicates(OcrResult result, float overlapThreshold = 0.8f)
+    public OcrResult RemoveDuplicates(OcrResult result, float overlapThreshold = 0.95f)
     {
         if (result == null || !result.Success || result.TextRegions.Count == 0)
             return result ?? new OcrResult { Success = false, ErrorMessage = "輸入結果為null" };

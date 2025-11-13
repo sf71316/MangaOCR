@@ -18,20 +18,48 @@ public class PaddleOcrService : IOcrService
     private readonly bool _usePreprocessing;
 
     /// <summary>
-    /// 建立PaddleOCR服務（使用日文+中文模型）
+    /// 建立PaddleOCR服務（使用預設配置：日文模型）
+    /// </summary>
+    public PaddleOcrService() : this(new OcrSettings())
+    {
+    }
+
+    /// <summary>
+    /// 建立PaddleOCR服務（使用日文+中文模型，舊版建構函數，保留向後兼容）
     /// </summary>
     /// <param name="usePreprocessing">是否啟用影像預處理（預設false，因為PaddleOCR對原圖效果更好）</param>
-    public PaddleOcrService(bool usePreprocessing = false)
+    [Obsolete("請使用接受 OcrSettings 參數的建構函數")]
+    public PaddleOcrService(bool usePreprocessing) : this(new OcrSettings { UsePreprocessing = usePreprocessing })
     {
-        _usePreprocessing = usePreprocessing;
+    }
+
+    /// <summary>
+    /// 建立PaddleOCR服務（使用自訂配置）
+    /// </summary>
+    /// <param name="settings">OCR配置</param>
+    public PaddleOcrService(OcrSettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+
+        _usePreprocessing = settings.UsePreprocessing;
         _imageProcessor = new ImageProcessor();
 
-        // 使用線上模型（首次會下載，需要同步等待）
-        var model = OnlineFullModels.JapanV4.DownloadAsync().GetAwaiter().GetResult();
+        // 根據語言選擇對應的線上模型
+        var model = settings.Language.ToLowerInvariant() switch
+        {
+            "japanese" or "ja" or "日文" => OnlineFullModels.JapanV4.DownloadAsync().GetAwaiter().GetResult(),
+            "chinese" or "zh" or "中文" => OnlineFullModels.ChineseV4.DownloadAsync().GetAwaiter().GetResult(),
+            "chinesetraditional" or "zh-tw" or "繁體中文" => OnlineFullModels.ChineseV4.DownloadAsync().GetAwaiter().GetResult(),
+            "chinesesimplified" or "zh-cn" or "簡體中文" => OnlineFullModels.ChineseV4.DownloadAsync().GetAwaiter().GetResult(),
+            "english" or "en" or "英文" => OnlineFullModels.EnglishV4.DownloadAsync().GetAwaiter().GetResult(),
+            "korean" or "ko" or "韓文" => OnlineFullModels.KoreanV4.DownloadAsync().GetAwaiter().GetResult(),
+            _ => OnlineFullModels.JapanV4.DownloadAsync().GetAwaiter().GetResult() // 預設日文
+        };
+
         _ocr = new PaddleOcrAll(model)
         {
-            AllowRotateDetection = true,     // 允許旋轉偵測
-            Enable180Classification = true,   // 啟用180度分類
+            AllowRotateDetection = settings.AllowRotateDetection,
+            Enable180Classification = settings.Enable180Classification,
         };
     }
 
