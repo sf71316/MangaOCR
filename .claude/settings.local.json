@@ -17,7 +17,11 @@
       "Bash(dotnet run)",
       "Bash(timeout 180 dotnet run:*)",
       "Bash(git init:*)",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(dotnet script:*)",
+      "Bash(dotnet clean:*)",
+      "Bash(cd:*)"
     ],
     "deny": [],
     "ask": []

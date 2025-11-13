@@ -97,74 +97,100 @@ if (rawResult.Success)
     var removed = rawResult.TextRegions.Count - processedResult.TextRegions.Count;
     Console.WriteLine($"  已過濾: {removed} 個低品質區域");
 
+    // 分析OCR原始順序
     Console.WriteLine();
-    Console.WriteLine("=== 所有識別結果（按圖片位置從上到下排列）===");
-    Console.WriteLine("圖例：✓高信心度(>=70%) ◆中信心度(50-70%) ✗低信心度(<50%) ⚠失敗/空白");
+    Console.WriteLine("=== OCR原始返回順序分析 ===");
+    var orderAnalyzer = new TextOrderAnalyzer();
+    Console.WriteLine(orderAnalyzer.AnalyzeOriginalOrder(rawResult.TextRegions.Take(10).ToList()));
+
+    // 跨頁檢測診斷
     Console.WriteLine();
+    Console.WriteLine(orderAnalyzer.DiagnosePageDetection(processedResult.TextRegions));
 
-    // 按Y座標排序（從上到下），然後按X座標（從左到右）
-    var sortedRegions = rawResult.TextRegions
-        .OrderBy(r => r.BoundingBox.Y)
-        .ThenBy(r => r.BoundingBox.X)
-        .ToList();
-
-    int index = 1;
-    foreach (var region in sortedRegions)
+    // 顯示所有區域的X座標
+    Console.WriteLine();
+    Console.WriteLine("=== 所有文字區域X座標分布 ===");
+    var sortedByX = processedResult.TextRegions.OrderBy(r => r.BoundingBox.X).ToList();
+    foreach (var region in sortedByX)
     {
-        string status;
-        string statusIcon;
+        Console.WriteLine($"X={region.BoundingBox.X:D4}: {region.Text}");
+    }
+    Console.WriteLine($"X範圍: {sortedByX.First().BoundingBox.X} ~ {sortedByX.Last().BoundingBox.X + sortedByX.Last().BoundingBox.Width}");
 
-        if (string.IsNullOrWhiteSpace(region.Text))
-        {
-            status = "失敗/空白";
-            statusIcon = "⚠";
-        }
-        else if (float.IsNaN(region.Confidence))
-        {
-            status = "無信心度";
-            statusIcon = "⚠";
-        }
-        else if (region.Confidence >= 0.7f)
-        {
-            status = "高信心度";
-            statusIcon = "✓";
-        }
-        else if (region.Confidence >= 0.5f)
-        {
-            status = "中信心度";
-            statusIcon = "◆";
-        }
-        else
-        {
-            status = "低信心度";
-            statusIcon = "✗";
-        }
+    // 測試不同的閱讀順序
+    Console.WriteLine("=== 閱讀順序測試 ===");
+    Console.WriteLine();
 
-        var confidenceStr = float.IsNaN(region.Confidence) ? "N/A" : $"{region.Confidence:P1}";
-        var textDisplay = string.IsNullOrWhiteSpace(region.Text) ? "[空白]" : region.Text;
+    Console.WriteLine("【順序1：從左到右、從上到下（英文模式）】");
+    var leftToRight = orderAnalyzer.SortByReadingOrder(
+        processedResult.TextRegions,
+        TextOrderAnalyzer.ReadingDirection.LeftToRightTopToBottom);
+    Console.WriteLine(string.Join(" → ", leftToRight.Take(10).Select(r => r.Text)));
 
-        Console.WriteLine($"[{index:D2}] {statusIcon} {textDisplay}");
-        Console.WriteLine($"      信心度: {confidenceStr} ({status})");
-        Console.WriteLine($"      位置: X={region.BoundingBox.X}, Y={region.BoundingBox.Y}, W={region.BoundingBox.Width}, H={region.BoundingBox.Height}");
-        Console.WriteLine();
-        index++;
+    Console.WriteLine();
+    Console.WriteLine("【順序2：從右到左、從上到下（日文漫畫模式）】");
+    var rightToLeft = orderAnalyzer.SortByReadingOrder(
+        processedResult.TextRegions,
+        TextOrderAnalyzer.ReadingDirection.RightToLeftTopToBottom);
+    Console.WriteLine(string.Join(" → ", rightToLeft.Take(10).Select(r => r.Text)));
+
+    Console.WriteLine();
+    Console.WriteLine("【順序3：從上到下、從右到左（直排模式）】");
+    var topToBottom = orderAnalyzer.SortByReadingOrder(
+        processedResult.TextRegions,
+        TextOrderAnalyzer.ReadingDirection.TopToBottomRightToLeft);
+    Console.WriteLine(string.Join(" → ", topToBottom.Take(10).Select(r => r.Text)));
+
+    Console.WriteLine();
+    Console.WriteLine("【順序4：自動檢測】");
+    var autoDetect = orderAnalyzer.SortByReadingOrder(
+        processedResult.TextRegions,
+        TextOrderAnalyzer.ReadingDirection.Auto);
+    Console.WriteLine(string.Join(" → ", autoDetect.Take(10).Select(r => r.Text)));
+
+    Console.WriteLine();
+    Console.WriteLine("=== 推薦的閱讀順序（日文漫畫：從右到左、從上到下）===");
+    var orderedRegions = orderAnalyzer.AssignReadingOrder(
+        processedResult.TextRegions,
+        TextOrderAnalyzer.ReadingDirection.RightToLeftTopToBottom);
+
+    foreach (var (region, order) in orderedRegions.Take(15))
+    {
+        Console.WriteLine($"[{order:D2}] {region.Text} (信心度: {region.Confidence:P1})");
     }
 
-    Console.WriteLine("=== 統計摘要 ===");
-    var highCount = sortedRegions.Count(r => !float.IsNaN(r.Confidence) && r.Confidence >= 0.7f);
-    var mediumCount = sortedRegions.Count(r => !float.IsNaN(r.Confidence) && r.Confidence >= 0.5f && r.Confidence < 0.7f);
-    var lowCount = sortedRegions.Count(r => !float.IsNaN(r.Confidence) && r.Confidence < 0.5f);
-    var failedCount = sortedRegions.Count(r => string.IsNullOrWhiteSpace(r.Text) || float.IsNaN(r.Confidence));
+    if (orderedRegions.Count > 15)
+    {
+        Console.WriteLine($"... 還有 {orderedRegions.Count - 15} 個區域");
+    }
 
-    Console.WriteLine($"✓ 高信心度(>=70%): {highCount} 個");
-    Console.WriteLine($"◆ 中信心度(50-70%): {mediumCount} 個");
-    Console.WriteLine($"✗ 低信心度(<50%): {lowCount} 個");
-    Console.WriteLine($"⚠ 失敗/空白: {failedCount} 個");
-    Console.WriteLine($"總計: {sortedRegions.Count} 個區域");
-
+    // 生成標註圖片
     Console.WriteLine();
-    Console.WriteLine("=== 後處理後的完整文字 ===");
-    Console.WriteLine(processedResult.FullText);
+    Console.WriteLine("=== 生成視覺化標註圖片 ===");
+    var annotator = new ImageAnnotator();
+
+    var outputDir = Path.Combine(Directory.GetCurrentDirectory(), "..", "TestData");
+    var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+    var readingOrderOutput = Path.Combine(outputDir, $"4_reading_order_{timestamp}.png");
+    var confidenceOutput = Path.Combine(outputDir, $"4_confidence_{timestamp}.png");
+
+    try
+    {
+        // 標註閱讀順序（使用後處理後的結果）
+        annotator.AnnotateReadingOrder(testImagePath, orderedRegions, readingOrderOutput);
+
+        // 標註信心度（使用原始結果，展示所有區域）
+        annotator.AnnotateConfidence(testImagePath, rawResult.TextRegions, confidenceOutput);
+
+        Console.WriteLine();
+        Console.WriteLine("生成的圖片：");
+        Console.WriteLine($"  1. 閱讀順序標註: {Path.GetFileName(readingOrderOutput)}");
+        Console.WriteLine($"  2. 信心度標註: {Path.GetFileName(confidenceOutput)}");
+    }
+    catch (Exception ex)
+    {
+        Console.WriteLine($"✗ 生成標註圖片失敗: {ex.Message}");
+    }
 }
 else
 {
