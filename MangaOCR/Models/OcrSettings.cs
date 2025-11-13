@@ -48,7 +48,7 @@ public class OcrSettings
     public float UnclipRatio { get; set; } = 1.5f;
 
     /// <summary>
-    /// 偵測時的最大圖片尺寸（預設960）
+    /// 偵測時的最大圖片尺寸（預設1024）
     /// - 提高值(1280-1920)：提升準確度但降低速度
     /// - 降低值(640-800)：提升速度但降低準確度
     /// </summary>
