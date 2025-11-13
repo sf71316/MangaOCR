@@ -39,6 +39,34 @@ public class OcrSettings
     /// 是否啟用180度分類
     /// </summary>
     public bool Enable180Classification { get; set; } = true;
+
+    /// <summary>
+    /// 文字區域擴展比例（預設1.5）
+    /// - 較小值(1.2-1.3)：適合清晰的漫畫字體
+    /// - 較大值(1.8-2.0)：適合小而密集的文字
+    /// </summary>
+    public float UnclipRatio { get; set; } = 1.5f;
+
+    /// <summary>
+    /// 偵測時的最大圖片尺寸（預設960）
+    /// - 提高值(1280-1920)：提升準確度但降低速度
+    /// - 降低值(640-800)：提升速度但降低準確度
+    /// </summary>
+    public int MaxSize { get; set; } = 1024;
+
+    /// <summary>
+    /// 邊界框信心度閾值（預設0.6）
+    /// - 提高值(0.7-0.8)：減少誤判但可能遺漏文字
+    /// - 降低值(0.5)：檢測更多文字但可能增加誤判
+    /// </summary>
+    public float BoxScoreThreshold { get; set; } = 0.6f;
+
+    /// <summary>
+    /// 二值化閾值（預設0.3）
+    /// - 提高值(0.4)：減少雜訊
+    /// - 降低值(0.2)：檢測更多文字
+    /// </summary>
+    public float Threshold { get; set; } = 0.3f;
 }
 
 /// <summary>

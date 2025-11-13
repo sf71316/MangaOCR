@@ -61,6 +61,10 @@ public class PaddleOcrService : IOcrService
             AllowRotateDetection = settings.AllowRotateDetection,
             Enable180Classification = settings.Enable180Classification,
         };
+
+        // 應用偵測參數以提升準確度
+        _ocr.Detector.UnclipRatio = settings.UnclipRatio;
+        _ocr.Detector.MaxSize = settings.MaxSize;
     }
 
     /// <summary>
