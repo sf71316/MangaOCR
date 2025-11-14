@@ -23,7 +23,14 @@
       "Bash(dotnet clean:*)",
       "Bash(cd:*)",
       "Bash(dotnet run:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git rm:*)",
+      "Bash(git remote add:*)",
+      "Bash(git push:*)",
+      "Bash(git fetch:*)",
+      "Bash(git branch:*)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []
