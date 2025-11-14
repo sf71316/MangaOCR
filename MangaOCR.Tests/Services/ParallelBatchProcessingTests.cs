@@ -270,11 +270,10 @@ public class ParallelBatchProcessingTests : IDisposable
     [Fact]
     public void BatchProcessingOptions_GetActualMaxDegreeOfParallelism_ShouldCalculateCorrectly()
     {
-        // Test 1: 使用預設值
+        // Test 1: 使用預設值（根據效能測試結果，預設為 4）
         var options1 = new BatchProcessingOptions();
         var actual1 = options1.GetActualMaxDegreeOfParallelism();
-        var expected1 = Math.Max(1, Environment.ProcessorCount / 2);
-        Assert.Equal(expected1, actual1);
+        Assert.Equal(4, actual1);
 
         // Test 2: 使用自訂值
         var options2 = new BatchProcessingOptions { MaxDegreeOfParallelism = 4 };
@@ -282,10 +281,10 @@ public class ParallelBatchProcessingTests : IDisposable
 
         // Test 3: 無效值應該使用預設值
         var options3 = new BatchProcessingOptions { MaxDegreeOfParallelism = 0 };
-        Assert.Equal(expected1, options3.GetActualMaxDegreeOfParallelism());
+        Assert.Equal(4, options3.GetActualMaxDegreeOfParallelism());
 
         Console.WriteLine($"CPU 核心數: {Environment.ProcessorCount}");
-        Console.WriteLine($"預設最大平行線程數: {expected1}");
+        Console.WriteLine($"預設最大平行線程數: 4");
     }
 
     public void Dispose()

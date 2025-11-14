@@ -80,7 +80,7 @@ public class OcrProgressEventArgs : EventArgs
 public class BatchProcessingOptions
 {
     /// <summary>
-    /// 最大平行處理線程數（預設為 CPU 核心數 / 2）
+    /// 最大平行處理線程數（預設為 4，根據效能測試結果最佳）
     /// </summary>
     public int? MaxDegreeOfParallelism { get; set; }
 
@@ -114,7 +114,7 @@ public class BatchProcessingOptions
             return MaxDegreeOfParallelism.Value;
         }
 
-        // 預設為 CPU 核心數 / 2，最少 1
-        return Math.Max(1, Environment.ProcessorCount / 2);
+        // 預設為 4（根據效能測試結果，4 線程在大多數情況下最佳）
+        return 4;
     }
 }
