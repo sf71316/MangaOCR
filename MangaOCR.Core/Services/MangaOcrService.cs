@@ -122,6 +122,70 @@ public class MangaOcrService : IDisposable
         return _adaptiveService.GetRecommendationExplanation(imagePath);
     }
 
+    /// <summary>
+    /// 只檢測文字區域座標，不識別文字內容（快速模式）
+    /// </summary>
+    public List<TextRegion> DetectTextRegions(string imagePath)
+    {
+        var service = GetOrCreateStandardService();
+        return service.DetectTextRegions(imagePath);
+    }
+
+    /// <summary>
+    /// 只檢測文字區域座標（非同步）
+    /// </summary>
+    public Task<List<TextRegion>> DetectTextRegionsAsync(string imagePath, CancellationToken cancellationToken = default)
+    {
+        var service = GetOrCreateStandardService();
+        return service.DetectTextRegionsAsync(imagePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// 只識別單一文字區域（跳過檢測階段，極速模式）
+    /// </summary>
+    public OcrResult RecognizeTextOnly(string imagePath)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextOnly(imagePath);
+    }
+
+    /// <summary>
+    /// 只識別單一文字區域（非同步）
+    /// </summary>
+    public Task<OcrResult> RecognizeTextOnlyAsync(string imagePath, CancellationToken cancellationToken = default)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextOnlyAsync(imagePath, cancellationToken);
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片
+    /// </summary>
+    public List<OcrResult> RecognizeTextBatch(List<string> imagePaths)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextBatch(imagePaths);
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（非同步）
+    /// </summary>
+    public Task<List<OcrResult>> RecognizeTextBatchAsync(List<string> imagePaths, CancellationToken cancellationToken = default)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextBatchAsync(imagePaths, cancellationToken);
+    }
+
+    private IOcrService GetOrCreateStandardService()
+    {
+        if (_standardService == null)
+        {
+            var factory = new OcrServiceFactory();
+            _standardService = factory.CreateOcrService(_settings);
+        }
+        return _standardService;
+    }
+
     private OcrResult RecognizeWithAdaptiveMode(string imagePath, bool verbose)
     {
         _adaptiveService ??= new AdaptiveOcrService(_settings);
@@ -130,13 +194,8 @@ public class MangaOcrService : IDisposable
 
     private OcrResult RecognizeWithStandardMode(string imagePath)
     {
-        if (_standardService == null)
-        {
-            var factory = new OcrServiceFactory();
-            _standardService = factory.CreateOcrService(_settings);
-        }
-
-        return _standardService.RecognizeText(imagePath);
+        var service = GetOrCreateStandardService();
+        return service.RecognizeText(imagePath);
     }
 
     public void Dispose()

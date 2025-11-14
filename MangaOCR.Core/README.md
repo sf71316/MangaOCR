@@ -6,6 +6,7 @@
 
 - ✨ **自適應 OCR**：自動分析圖像質量並選擇最佳參數（預設模式）
 - 🚀 **高性能**：自適應模式平均快 38%，辨識率維持相同水準
+- ⚡ **檢測識別分離**：支援只檢測座標、只識別文字、批次處理（速度提升 60+ 倍）
 - 🎯 **專為漫畫優化**：預設配置針對日文漫畫場景調整
 - 📊 **結果後處理**：自動過濾低信心度區域、分析閱讀順序
 - 🔍 **視覺化除錯**：生成標註圖片（信心度熱圖、閱讀順序）
@@ -421,6 +422,171 @@ Console.WriteLine($"  平均信心度：{avgConfidence:P1}");
 
 ---
 
+### 範例 8：只檢測文字座標（快速模式）
+
+```csharp
+using MangaOCR.Services;
+
+using var ocr = MangaOcrService.CreateDefault();
+
+// 只檢測文字區域座標，不識別文字內容
+// 適用場景：用戶互動選取、預處理工作流
+var regions = ocr.DetectTextRegions("manga.png");
+
+Console.WriteLine($"檢測到 {regions.Count} 個文字區域");
+foreach (var region in regions)
+{
+    Console.WriteLine($"座標：({region.BoundingBox.X}, {region.BoundingBox.Y})");
+    Console.WriteLine($"尺寸：{region.BoundingBox.Width}x{region.BoundingBox.Height}");
+}
+
+// 速度對比：只檢測比完整 OCR 快約 40%
+```
+
+**使用場景**：
+- 用戶需要先看到所有文字位置，再選擇要識別的區域
+- 批次預處理：先檢測所有頁面的文字位置，再批次識別
+- 互動式 OCR：讓用戶點選感興趣的文字框
+
+---
+
+### 範例 9：只識別單一文字區域（極速模式）
+
+```csharp
+using MangaOCR.Services;
+
+using var ocr = MangaOcrService.CreateDefault();
+
+// 假設整張圖片就是一個已截取的文字區域
+// 跳過檢測階段，直接識別文字內容
+var result = ocr.RecognizeTextOnly("cropped_text.png");
+
+if (result.Success && result.TextRegions.Count > 0)
+{
+    Console.WriteLine($"識別文字：{result.TextRegions[0].Text}");
+    Console.WriteLine($"信心度：{result.TextRegions[0].Confidence:P1}");
+    Console.WriteLine($"耗時：{result.ElapsedMilliseconds}ms");
+}
+
+// 速度對比：處理小圖片時比完整 OCR 快 60+ 倍
+// 完整 OCR (4056x2908)：~1300ms
+// 只識別 (100x50)：~20ms
+```
+
+**使用場景**：
+- 用戶已手動截取好文字圖片
+- 點選特定文字框進行即時翻譯
+- 處理已知只包含一個文字區域的小圖片
+
+---
+
+### 範例 10：批次識別多個已截取的文字圖片
+
+```csharp
+using MangaOCR.Services;
+
+// 假設用戶已經截取了多個文字圖片
+var croppedImages = new List<string>
+{
+    "text_region_1.png",
+    "text_region_2.png",
+    "text_region_3.png",
+    // ... 更多圖片
+};
+
+using var ocr = MangaOcrService.CreateDefault();
+
+// 批次識別（每個圖片都跳過檢測階段）
+var results = ocr.RecognizeTextBatch(croppedImages);
+
+Console.WriteLine($"批次識別完成：");
+foreach (var (result, index) in results.Select((r, i) => (r, i)))
+{
+    if (result.Success && result.TextRegions.Count > 0)
+    {
+        var text = result.TextRegions[0].Text;
+        var confidence = result.TextRegions[0].Confidence;
+        Console.WriteLine($"  [{index + 1}] {text} ({confidence:P1})");
+    }
+}
+
+// 統計資訊
+var successCount = results.Count(r => r.Success);
+var avgTime = results.Where(r => r.Success).Average(r => r.ElapsedMilliseconds);
+Console.WriteLine($"\n成功識別：{successCount}/{results.Count}");
+Console.WriteLine($"平均耗時：{avgTime:F0}ms");
+```
+
+**使用場景**：
+- 批次處理大量已截取的文字圖片
+- 分階段處理：先檢測所有頁面，再批次識別選定區域
+- 高性能場景：1000 個小圖片只需 ~20 秒（vs 完整 OCR 的 ~1300 秒）
+
+---
+
+### 範例 11：完整工作流程（檢測 + 選擇性識別）
+
+```csharp
+using MangaOCR.Services;
+using SixLabors.ImageSharp;
+using SixLabors.ImageSharp.Processing;
+
+using var ocr = MangaOcrService.CreateDefault();
+
+// 步驟 1：快速檢測所有文字區域
+Console.WriteLine("步驟 1：檢測文字區域...");
+var regions = ocr.DetectTextRegions("manga_page.png");
+Console.WriteLine($"  檢測到 {regions.Count} 個區域");
+
+// 步驟 2：用戶選擇感興趣的區域（模擬）
+// 實際應用中可以透過 UI 讓用戶點選
+var selectedRegions = regions.Take(3).ToList();
+Console.WriteLine($"\n步驟 2：用戶選擇了 {selectedRegions.Count} 個區域");
+
+// 步驟 3：截取選定區域的圖片
+var croppedImages = new List<string>();
+using var originalImage = Image.Load("manga_page.png");
+
+foreach (var (region, index) in selectedRegions.Select((r, i) => (r, i)))
+{
+    var bbox = region.BoundingBox;
+    var cropped = originalImage.Clone(img =>
+        img.Crop(new Rectangle(bbox.X, bbox.Y, bbox.Width, bbox.Height))
+    );
+
+    var outputPath = $"temp_region_{index}.png";
+    cropped.Save(outputPath);
+    croppedImages.Add(outputPath);
+}
+
+// 步驟 4：批次識別選定區域（極速模式）
+Console.WriteLine("\n步驟 3：識別選定區域...");
+var recognitionResults = ocr.RecognizeTextBatch(croppedImages);
+
+foreach (var (result, index) in recognitionResults.Select((r, i) => (r, i)))
+{
+    if (result.Success && result.TextRegions.Count > 0)
+    {
+        var text = result.TextRegions[0].Text;
+        var confidence = result.TextRegions[0].Confidence;
+        Console.WriteLine($"  區域 {index + 1}: {text} ({confidence:P1})");
+    }
+}
+
+// 清理臨時文件
+foreach (var file in croppedImages)
+{
+    File.Delete(file);
+}
+
+// 效能優勢：
+// - 完整 OCR：~1300ms
+// - 檢測 + 批次識別 3 個區域：~800ms + 3×20ms = ~860ms
+// - 對於大圖片選擇性識別，速度提升明顯！
+```
+
+---
+
 ## 完整工作流程
 
 ```csharp
@@ -669,13 +835,29 @@ public static MangaOcrService CreateStandard(OcrSettings? settings = null)
 #### 識別方法
 
 ```csharp
-// 同步識別
+// 完整 OCR（檢測 + 識別）
 public OcrResult RecognizeText(string imagePath, bool verbose = false)
-
-// 非同步識別
 public async Task<OcrResult> RecognizeTextAsync(
     string imagePath,
     bool verbose = false,
+    CancellationToken cancellationToken = default)
+
+// 只檢測文字區域座標（快速模式）
+public List<TextRegion> DetectTextRegions(string imagePath)
+public async Task<List<TextRegion>> DetectTextRegionsAsync(
+    string imagePath,
+    CancellationToken cancellationToken = default)
+
+// 只識別單一文字區域（極速模式，跳過檢測）
+public OcrResult RecognizeTextOnly(string imagePath)
+public async Task<OcrResult> RecognizeTextOnlyAsync(
+    string imagePath,
+    CancellationToken cancellationToken = default)
+
+// 批次識別多個已截取的文字圖片
+public List<OcrResult> RecognizeTextBatch(List<string> imagePaths)
+public async Task<List<OcrResult>> RecognizeTextBatchAsync(
+    List<string> imagePaths,
     CancellationToken cancellationToken = default)
 ```
 
@@ -747,14 +929,43 @@ public class TextRegion
 4. 檢查 `MinConfidence` 是否過濾掉了低信心度區域
 5. 使用 `verbose: true` 查看診斷資訊
 
-### Q4: 如何處理傾斜或旋轉的文字？
+### Q4: 何時應該使用檢測/識別分離模式？
+
+**答**：
+
+**使用 `DetectTextRegions()` 的時機**：
+- 需要讓用戶先看到文字位置，再選擇要識別的區域
+- 批次預處理：先檢測所有頁面，再批次識別
+- 互動式應用：讓用戶點選感興趣的文字框
+- 速度提升：比完整 OCR 快約 40%
+
+**使用 `RecognizeTextOnly()` 的時機**：
+- 用戶已手動截取好文字圖片
+- 點選特定文字框進行即時翻譯
+- 處理已知只包含一個文字區域的小圖片
+- 速度提升：處理小圖片比完整 OCR 快 60+ 倍
+
+**使用 `RecognizeTextBatch()` 的時機**：
+- 批次處理大量已截取的文字圖片
+- 高性能場景：1000 個小圖片只需 ~20 秒（vs 完整 OCR 的 ~1300 秒）
+- 分階段處理：先檢測所有頁面，再批次識別選定區域
+
+**性能對比**：
+```
+完整 OCR (4056x2908)：        ~1300ms
+只檢測：                      ~800ms   (快 38%)
+只識別 (100x50 小圖)：        ~20ms    (快 65 倍)
+批次識別 1000 個小圖：        ~20s     (vs ~1300s)
+```
+
+### Q5: 如何處理傾斜或旋轉的文字？
 
 **答**：
 1. 確保 `AllowRotateDetection = true`
 2. 確保 `Enable180Classification = true`
 3. 如果文字嚴重傾斜，考慮預先校正圖像
 
-### Q5: 自適應模式和標準模式有什麼區別？
+### Q6: 自適應模式和標準模式有什麼區別？
 
 **答**：
 

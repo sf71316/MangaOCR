@@ -178,6 +178,249 @@ public class PaddleOcrService : IOcrService
         return Task.Run(() => RecognizeText(imagePath), cancellationToken);
     }
 
+    /// <summary>
+    /// 只檢測文字區域座標，不識別文字內容（快速模式）
+    /// </summary>
+    public List<TextRegion> DetectTextRegions(string imagePath)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(PaddleOcrService));
+        }
+
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            throw new ArgumentNullException(nameof(imagePath));
+        }
+
+        if (!File.Exists(imagePath))
+        {
+            throw new FileNotFoundException($"找不到圖片檔案: {imagePath}");
+        }
+
+        var regions = new List<TextRegion>();
+
+        try
+        {
+            using var src = Cv2.ImRead(imagePath);
+
+            if (src.Empty())
+            {
+                throw new InvalidOperationException($"無法載入圖片: {imagePath}");
+            }
+
+            // 影像預處理（如果啟用）
+            Mat processedImage = src;
+            if (_usePreprocessing)
+            {
+                processedImage = _imageProcessor.PreprocessForOcr(src);
+            }
+
+            try
+            {
+                // 只執行檢測階段
+                var detectedRects = _ocr.Detector.Run(processedImage);
+
+                // 轉換為 TextRegion 格式（只包含座標，不包含文字）
+                foreach (var rect in detectedRects)
+                {
+                    var textRegion = new TextRegion
+                    {
+                        Text = string.Empty,  // 不識別文字內容
+                        Confidence = float.NaN,  // 檢測階段沒有信心度
+                        BoundingBox = new BoundingBox()
+                    };
+
+                    // 從 RotatedRect 獲取四個角點
+                    var points = rect.Points();
+                    foreach (var p in points)
+                    {
+                        textRegion.BoundingBox.Points.Add(new Models.Point((int)p.X, (int)p.Y));
+                    }
+
+                    // 計算邊界框
+                    if (textRegion.BoundingBox.Points.Count > 0)
+                    {
+                        var minX = textRegion.BoundingBox.Points.Min(p => p.X);
+                        var minY = textRegion.BoundingBox.Points.Min(p => p.Y);
+                        var maxX = textRegion.BoundingBox.Points.Max(p => p.X);
+                        var maxY = textRegion.BoundingBox.Points.Max(p => p.Y);
+
+                        textRegion.BoundingBox.X = minX;
+                        textRegion.BoundingBox.Y = minY;
+                        textRegion.BoundingBox.Width = maxX - minX;
+                        textRegion.BoundingBox.Height = maxY - minY;
+                    }
+
+                    regions.Add(textRegion);
+                }
+            }
+            finally
+            {
+                if (_usePreprocessing && processedImage != src)
+                {
+                    processedImage?.Dispose();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            throw new InvalidOperationException($"檢測文字區域失敗: {ex.Message}", ex);
+        }
+
+        return regions;
+    }
+
+    /// <summary>
+    /// 只檢測文字區域座標（非同步）
+    /// </summary>
+    public Task<List<TextRegion>> DetectTextRegionsAsync(string imagePath, CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => DetectTextRegions(imagePath), cancellationToken);
+    }
+
+    /// <summary>
+    /// 只識別單一文字區域（跳過檢測階段，極速模式）
+    /// </summary>
+    public OcrResult RecognizeTextOnly(string imagePath)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(PaddleOcrService));
+        }
+
+        if (string.IsNullOrWhiteSpace(imagePath))
+        {
+            throw new ArgumentNullException(nameof(imagePath));
+        }
+
+        if (!File.Exists(imagePath))
+        {
+            throw new FileNotFoundException($"找不到圖片檔案: {imagePath}");
+        }
+
+        var stopwatch = Stopwatch.StartNew();
+        var result = new OcrResult { Success = true };
+
+        try
+        {
+            using var src = Cv2.ImRead(imagePath);
+
+            if (src.Empty())
+            {
+                throw new InvalidOperationException($"無法載入圖片: {imagePath}");
+            }
+
+            // 影像預處理（如果啟用）
+            Mat processedImage = src;
+            if (_usePreprocessing)
+            {
+                processedImage = _imageProcessor.PreprocessForOcr(src);
+            }
+
+            try
+            {
+                // 只執行識別階段（假設整張圖片就是一個文字區域）
+                var recognizerResult = _ocr.Recognizer.Run(processedImage);
+
+                // 由於沒有檢測階段，無法獲得精確的信心度，使用整張圖片作為邊界框
+                var textRegion = new TextRegion
+                {
+                    Text = recognizerResult.Text,
+                    Confidence = recognizerResult.Score,
+                    BoundingBox = new BoundingBox
+                    {
+                        X = 0,
+                        Y = 0,
+                        Width = processedImage.Width,
+                        Height = processedImage.Height
+                    }
+                };
+
+                // 添加四個角點
+                textRegion.BoundingBox.Points.Add(new Models.Point(0, 0));
+                textRegion.BoundingBox.Points.Add(new Models.Point(processedImage.Width, 0));
+                textRegion.BoundingBox.Points.Add(new Models.Point(processedImage.Width, processedImage.Height));
+                textRegion.BoundingBox.Points.Add(new Models.Point(0, processedImage.Height));
+
+                result.TextRegions.Add(textRegion);
+
+                stopwatch.Stop();
+                result.ElapsedMilliseconds = stopwatch.ElapsedMilliseconds;
+            }
+            finally
+            {
+                if (_usePreprocessing && processedImage != src)
+                {
+                    processedImage?.Dispose();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            result.Success = false;
+            result.ErrorMessage = ex.Message;
+            stopwatch.Stop();
+            result.ElapsedMilliseconds = stopwatch.ElapsedMilliseconds;
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// 只識別單一文字區域（非同步）
+    /// </summary>
+    public Task<OcrResult> RecognizeTextOnlyAsync(string imagePath, CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => RecognizeTextOnly(imagePath), cancellationToken);
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片
+    /// </summary>
+    public List<OcrResult> RecognizeTextBatch(List<string> imagePaths)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(PaddleOcrService));
+        }
+
+        if (imagePaths == null || imagePaths.Count == 0)
+        {
+            throw new ArgumentException("圖片路徑列表不能為空", nameof(imagePaths));
+        }
+
+        var results = new List<OcrResult>();
+
+        foreach (var imagePath in imagePaths)
+        {
+            try
+            {
+                var result = RecognizeTextOnly(imagePath);
+                results.Add(result);
+            }
+            catch (Exception ex)
+            {
+                // 即使某個圖片失敗，也繼續處理其他圖片
+                results.Add(new OcrResult
+                {
+                    Success = false,
+                    ErrorMessage = $"處理 {imagePath} 失敗: {ex.Message}"
+                });
+            }
+        }
+
+        return results;
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（非同步）
+    /// </summary>
+    public Task<List<OcrResult>> RecognizeTextBatchAsync(List<string> imagePaths, CancellationToken cancellationToken = default)
+    {
+        return Task.Run(() => RecognizeTextBatch(imagePaths), cancellationToken);
+    }
+
     public void Dispose()
     {
         if (!_disposed)
