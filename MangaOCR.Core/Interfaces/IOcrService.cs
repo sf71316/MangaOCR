@@ -8,6 +8,15 @@ namespace MangaOCR.Interfaces;
 public interface IOcrService : IDisposable
 {
     /// <summary>
+    /// 日誌事件（讓使用者自行決定如何收集和處理日誌）
+    /// </summary>
+    event EventHandler<OcrLogEventArgs>? LogMessage;
+
+    /// <summary>
+    /// 進度事件（批次處理時回報進度）
+    /// </summary>
+    event EventHandler<OcrProgressEventArgs>? ProgressChanged;
+    /// <summary>
     /// 從檔案路徑進行完整 OCR 識別（檢測 + 識別）
     /// </summary>
     /// <param name="imagePath">圖片路徑</param>
@@ -70,4 +79,20 @@ public interface IOcrService : IDisposable
     /// <param name="cancellationToken">取消權杖</param>
     /// <returns>識別結果列表</returns>
     Task<List<OcrResult>> RecognizeTextBatchAsync(List<string> imagePaths, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，支援平行處理和智能排程）
+    /// </summary>
+    /// <param name="imagePaths">已截取的文字圖片路徑列表</param>
+    /// <param name="options">批次處理選項（可指定最大線程數、智能排程等）</param>
+    /// <returns>識別結果列表</returns>
+    List<OcrResult> RecognizeTextBatchParallel(List<string> imagePaths, BatchProcessingOptions? options = null);
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，非同步）
+    /// </summary>
+    /// <param name="imagePaths">已截取的文字圖片路徑列表</param>
+    /// <param name="options">批次處理選項</param>
+    /// <returns>識別結果列表</returns>
+    Task<List<OcrResult>> RecognizeTextBatchParallelAsync(List<string> imagePaths, BatchProcessingOptions? options = null);
 }

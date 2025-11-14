@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using System.Diagnostics;
 using MangaOCR.Interfaces;
 using MangaOCR.Models;
@@ -16,6 +17,16 @@ public class PaddleOcrService : IOcrService
     private readonly IImageProcessor _imageProcessor;
     private bool _disposed;
     private readonly bool _usePreprocessing;
+
+    /// <summary>
+    /// 日誌事件
+    /// </summary>
+    public event EventHandler<OcrLogEventArgs>? LogMessage;
+
+    /// <summary>
+    /// 進度事件
+    /// </summary>
+    public event EventHandler<OcrProgressEventArgs>? ProgressChanged;
 
     /// <summary>
     /// 建立PaddleOCR服務（使用預設配置：日文模型）
@@ -419,6 +430,161 @@ public class PaddleOcrService : IOcrService
     public Task<List<OcrResult>> RecognizeTextBatchAsync(List<string> imagePaths, CancellationToken cancellationToken = default)
     {
         return Task.Run(() => RecognizeTextBatch(imagePaths), cancellationToken);
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，支援平行處理和智能排程）
+    /// </summary>
+    public List<OcrResult> RecognizeTextBatchParallel(List<string> imagePaths, BatchProcessingOptions? options = null)
+    {
+        if (_disposed)
+        {
+            throw new ObjectDisposedException(nameof(PaddleOcrService));
+        }
+
+        if (imagePaths == null || imagePaths.Count == 0)
+        {
+            throw new ArgumentException("圖片路徑列表不能為空", nameof(imagePaths));
+        }
+
+        options ??= BatchProcessingOptions.Default;
+        var maxDegree = options.GetActualMaxDegreeOfParallelism();
+
+        OnLog(OcrLogLevel.Information, $"開始批次處理 {imagePaths.Count} 張圖片，最大平行線程: {maxDegree}");
+
+        // 智能排程：根據檔案大小排序
+        var orderedPaths = options.EnableSmartScheduling
+            ? OrderImagesBySize(imagePaths, options.LargeFileSizeThreshold)
+            : imagePaths.Select((path, index) => (Path: path, Index: index, Size: 0L)).ToList();
+
+        if (options.EnableSmartScheduling)
+        {
+            OnLog(OcrLogLevel.Debug, $"智能排程已啟用，大檔案閾值: {options.LargeFileSizeThreshold / 1024}KB");
+        }
+
+        var results = new ConcurrentBag<(int Index, OcrResult Result)>();
+        var processedCount = 0;
+        var lockObj = new object();
+
+        var parallelOptions = new ParallelOptions
+        {
+            MaxDegreeOfParallelism = maxDegree,
+            CancellationToken = options.CancellationToken
+        };
+
+        try
+        {
+            Parallel.ForEach(orderedPaths, parallelOptions, item =>
+            {
+                options.CancellationToken.ThrowIfCancellationRequested();
+
+                var (path, index, size) = item;
+                OnLog(OcrLogLevel.Trace, $"開始處理: {Path.GetFileName(path)} (檔案大小: {size / 1024}KB)");
+
+                try
+                {
+                    var result = RecognizeTextOnly(path);
+                    results.Add((index, result));
+
+                    OnLog(OcrLogLevel.Trace, $"完成處理: {Path.GetFileName(path)} ({result.ElapsedMilliseconds}ms)");
+                }
+                catch (Exception ex)
+                {
+                    OnLog(OcrLogLevel.Error, $"處理失敗: {Path.GetFileName(path)} - {ex.Message}");
+                    results.Add((index, new OcrResult
+                    {
+                        Success = false,
+                        ErrorMessage = $"處理 {path} 失敗: {ex.Message}"
+                    }));
+                }
+
+                // 更新進度
+                lock (lockObj)
+                {
+                    processedCount++;
+                    OnProgress(processedCount, imagePaths.Count, path, $"已處理 {processedCount}/{imagePaths.Count}");
+                }
+            });
+
+            OnLog(OcrLogLevel.Information, $"批次處理完成，共處理 {processedCount} 張圖片");
+        }
+        catch (OperationCanceledException)
+        {
+            OnLog(OcrLogLevel.Warning, $"批次處理已取消，已處理 {processedCount}/{imagePaths.Count} 張圖片");
+            throw;
+        }
+
+        // 按原始順序返回結果
+        return results.OrderBy(r => r.Index).Select(r => r.Result).ToList();
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，非同步）
+    /// </summary>
+    public Task<List<OcrResult>> RecognizeTextBatchParallelAsync(List<string> imagePaths, BatchProcessingOptions? options = null)
+    {
+        return Task.Run(() => RecognizeTextBatchParallel(imagePaths, options), options?.CancellationToken ?? default);
+    }
+
+    /// <summary>
+    /// 根據檔案大小排序圖片路徑（智能排程）
+    /// 策略：大檔案優先處理，避免最後階段等待大檔案
+    /// </summary>
+    private List<(string Path, int Index, long Size)> OrderImagesBySize(List<string> imagePaths, long threshold)
+    {
+        var pathsWithSize = imagePaths
+            .Select((path, index) =>
+            {
+                long size = 0;
+                try
+                {
+                    if (File.Exists(path))
+                    {
+                        size = new FileInfo(path).Length;
+                    }
+                }
+                catch
+                {
+                    // 無法讀取檔案大小，視為 0
+                }
+                return (Path: path, Index: index, Size: size);
+            })
+            .ToList();
+
+        // 分組：大檔案和小檔案
+        var largeFiles = pathsWithSize.Where(x => x.Size >= threshold).OrderByDescending(x => x.Size);
+        var smallFiles = pathsWithSize.Where(x => x.Size < threshold).OrderByDescending(x => x.Size);
+
+        // 大檔案優先，然後是小檔案
+        return largeFiles.Concat(smallFiles).ToList();
+    }
+
+    /// <summary>
+    /// 觸發日誌事件
+    /// </summary>
+    protected virtual void OnLog(OcrLogLevel level, string message, Dictionary<string, object>? data = null)
+    {
+        LogMessage?.Invoke(this, new OcrLogEventArgs
+        {
+            Level = level,
+            Message = message,
+            Timestamp = DateTime.Now,
+            Data = data
+        });
+    }
+
+    /// <summary>
+    /// 觸發進度事件
+    /// </summary>
+    protected virtual void OnProgress(int current, int total, string? currentImagePath = null, string? message = null)
+    {
+        ProgressChanged?.Invoke(this, new OcrProgressEventArgs
+        {
+            Current = current,
+            Total = total,
+            CurrentImagePath = currentImagePath,
+            Message = message
+        });
     }
 
     public void Dispose()

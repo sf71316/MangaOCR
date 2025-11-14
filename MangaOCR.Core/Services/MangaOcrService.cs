@@ -15,6 +15,16 @@ public class MangaOcrService : IDisposable
     private IOcrService? _standardService;
     private AdaptiveOcrService? _adaptiveService;
 
+    /// <summary>
+    /// 日誌事件
+    /// </summary>
+    public event EventHandler<OcrLogEventArgs>? LogMessage;
+
+    /// <summary>
+    /// 進度事件
+    /// </summary>
+    public event EventHandler<OcrProgressEventArgs>? ProgressChanged;
+
     private MangaOcrService(OcrMode mode, OcrSettings? settings = null)
     {
         _mode = mode;
@@ -176,12 +186,34 @@ public class MangaOcrService : IDisposable
         return service.RecognizeTextBatchAsync(imagePaths, cancellationToken);
     }
 
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，支援平行處理和智能排程）
+    /// </summary>
+    public List<OcrResult> RecognizeTextBatchParallel(List<string> imagePaths, BatchProcessingOptions? options = null)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextBatchParallel(imagePaths, options);
+    }
+
+    /// <summary>
+    /// 批次識別多個已截取的文字圖片（進階版，非同步）
+    /// </summary>
+    public Task<List<OcrResult>> RecognizeTextBatchParallelAsync(List<string> imagePaths, BatchProcessingOptions? options = null)
+    {
+        var service = GetOrCreateStandardService();
+        return service.RecognizeTextBatchParallelAsync(imagePaths, options);
+    }
+
     private IOcrService GetOrCreateStandardService()
     {
         if (_standardService == null)
         {
             var factory = new OcrServiceFactory();
             _standardService = factory.CreateOcrService(_settings);
+
+            // 轉發事件
+            _standardService.LogMessage += (sender, e) => LogMessage?.Invoke(this, e);
+            _standardService.ProgressChanged += (sender, e) => ProgressChanged?.Invoke(this, e);
         }
         return _standardService;
     }

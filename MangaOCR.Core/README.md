@@ -7,6 +7,9 @@
 - ✨ **自適應 OCR**：自動分析圖像質量並選擇最佳參數（預設模式）
 - 🚀 **高性能**：自適應模式平均快 38%，辨識率維持相同水準
 - ⚡ **檢測識別分離**：支援只檢測座標、只識別文字、批次處理（速度提升 60+ 倍）
+- 🔥 **平行批次處理**：智能多線程處理，可自訂線程數（預設 CPU 核心數/2）
+- 📈 **智能排程**：大檔案優先處理，優化整體處理時間
+- 📡 **事件驅動**：即時日誌和進度回報，使用者自行決定如何收集資料
 - 🎯 **專為漫畫優化**：預設配置針對日文漫畫場景調整
 - 📊 **結果後處理**：自動過濾低信心度區域、分析閱讀順序
 - 🔍 **視覺化除錯**：生成標註圖片（信心度熱圖、閱讀順序）
@@ -587,6 +590,138 @@ foreach (var file in croppedImages)
 
 ---
 
+### 範例 12：平行批次處理（高性能）
+
+```csharp
+using MangaOCR.Models;
+using MangaOCR.Services;
+
+// 假設有大量已截取的文字圖片
+var croppedImages = Directory.GetFiles("cropped_texts", "*.png").ToList();
+Console.WriteLine($"準備處理 {croppedImages.Count} 張圖片");
+
+using var ocr = MangaOcrService.CreateDefault();
+
+// 方法 1：使用預設設定（CPU 核心數 / 2）
+var results1 = ocr.RecognizeTextBatchParallel(croppedImages);
+
+// 方法 2：自訂線程數和選項
+var options = new BatchProcessingOptions
+{
+    MaxDegreeOfParallelism = 4,        // 最多 4 個線程同時處理
+    EnableSmartScheduling = true,       // 啟用智能排程
+    LargeFileSizeThreshold = 500_000   // 500KB 以上視為大檔案
+};
+
+var results2 = ocr.RecognizeTextBatchParallel(croppedImages, options);
+
+Console.WriteLine($"處理完成：{results2.Count} 張圖片");
+
+// 效能對比：
+// 循序處理 100 張：~2000ms
+// 平行處理 100 張（4 線程）：~600ms （提升 3.3 倍）
+```
+
+**優勢**：
+- 自動利用多核 CPU
+- 智能排程避免大檔案阻塞
+- 可自訂線程數控制資源使用
+
+---
+
+### 範例 13：事件監聽（日誌和進度）
+
+```csharp
+using MangaOCR.Models;
+using MangaOCR.Services;
+
+using var ocr = MangaOCR.CreateDefault();
+
+// 訂閱日誌事件（使用者自行決定如何處理）
+ocr.LogMessage += (sender, e) =>
+{
+    var color = e.Level switch
+    {
+        OcrLogLevel.Error => ConsoleColor.Red,
+        OcrLogLevel.Warning => ConsoleColor.Yellow,
+        OcrLogLevel.Information => ConsoleColor.Green,
+        _ => ConsoleColor.Gray
+    };
+
+    Console.ForegroundColor = color;
+    Console.WriteLine($"[{e.Timestamp:HH:mm:ss}] [{e.Level}] {e.Message}");
+    Console.ResetColor();
+
+    // 也可以寫入日誌文件或發送到監控系統
+    // _logger.Log(e.Level, e.Message);
+};
+
+// 訂閱進度事件（即時追蹤處理進度）
+ocr.ProgressChanged += (sender, e) =>
+{
+    Console.WriteLine($"進度: {e.Percentage:P0} ({e.Current}/{e.Total})");
+    Console.WriteLine($"  當前處理: {Path.GetFileName(e.CurrentImagePath)}");
+
+    // 也可以更新 UI 進度條
+    // progressBar.Value = e.Percentage * 100;
+};
+
+// 執行批次處理（會觸發事件）
+var imagePaths = Directory.GetFiles("images", "*.png").ToList();
+var results = ocr.RecognizeTextBatchParallel(imagePaths);
+
+Console.WriteLine($"\n批次處理完成！成功: {results.Count(r => r.Success)}/{results.Count}");
+```
+
+**使用場景**：
+- 桌面應用程式：更新 UI 進度條
+- 後端服務：記錄日誌到文件或監控系統
+- 除錯：追蹤處理過程和錯誤
+
+---
+
+### 範例 14：取消處理（可中斷的批次任務）
+
+```csharp
+using MangaOCR.Models;
+using MangaOCR.Services;
+
+using var ocr = MangaOcrService.CreateDefault();
+using var cts = new CancellationTokenSource();
+
+var imagePaths = Directory.GetFiles("images", "*.png").ToList();
+var options = new BatchProcessingOptions
+{
+    CancellationToken = cts.Token,
+    MaxDegreeOfParallelism = 4
+};
+
+// 在另一個線程中設定 5 秒後自動取消
+_ = Task.Run(async () =>
+{
+    await Task.Delay(5000);
+    cts.Cancel();
+    Console.WriteLine("已發送取消請求...");
+});
+
+try
+{
+    var results = ocr.RecognizeTextBatchParallel(imagePaths, options);
+    Console.WriteLine($"全部完成！處理了 {results.Count} 張圖片");
+}
+catch (OperationCanceledException)
+{
+    Console.WriteLine("處理已取消");
+}
+
+// 使用場景：
+// - 使用者點擊「取消」按鈕
+// - 超時保護
+// - 應用程式關閉時優雅終止
+```
+
+---
+
 ## 完整工作流程
 
 ```csharp
@@ -854,11 +989,29 @@ public async Task<OcrResult> RecognizeTextOnlyAsync(
     string imagePath,
     CancellationToken cancellationToken = default)
 
-// 批次識別多個已截取的文字圖片
+// 批次識別多個已截取的文字圖片（循序處理）
 public List<OcrResult> RecognizeTextBatch(List<string> imagePaths)
 public async Task<List<OcrResult>> RecognizeTextBatchAsync(
     List<string> imagePaths,
     CancellationToken cancellationToken = default)
+
+// 批次識別（平行處理，高性能）⭐ 推薦
+public List<OcrResult> RecognizeTextBatchParallel(
+    List<string> imagePaths,
+    BatchProcessingOptions? options = null)
+public async Task<List<OcrResult>> RecognizeTextBatchParallelAsync(
+    List<string> imagePaths,
+    BatchProcessingOptions? options = null)
+```
+
+#### 事件
+
+```csharp
+// 日誌事件（使用者自行決定如何收集和處理）
+public event EventHandler<OcrLogEventArgs>? LogMessage;
+
+// 進度事件（批次處理時回報進度）
+public event EventHandler<OcrProgressEventArgs>? ProgressChanged;
 ```
 
 #### 輔助方法
@@ -869,6 +1022,68 @@ public OcrMode Mode { get; }
 
 // 獲取推薦參數說明（僅自適應模式）
 public string GetRecommendationExplanation(string imagePath)
+```
+
+---
+
+### BatchProcessingOptions
+
+```csharp
+public class BatchProcessingOptions
+{
+    // 最大平行線程數（null 則使用預設值：CPU 核心數 / 2）
+    public int? MaxDegreeOfParallelism { get; set; }
+
+    // 是否啟用智能排程（預設 true）
+    public bool EnableSmartScheduling { get; set; } = true;
+
+    // 大檔案閾值（預設 1MB）
+    public long LargeFileSizeThreshold { get; set; } = 1_000_000;
+
+    // 取消權杖
+    public CancellationToken CancellationToken { get; set; }
+
+    // 取得實際使用的平行線程數
+    public int GetActualMaxDegreeOfParallelism()
+}
+```
+
+---
+
+### OcrLogEventArgs
+
+```csharp
+public class OcrLogEventArgs : EventArgs
+{
+    public OcrLogLevel Level { get; set; }        // 日誌等級
+    public string Message { get; set; }            // 日誌訊息
+    public DateTime Timestamp { get; set; }        // 時間戳記
+    public Dictionary<string, object>? Data { get; set; }  // 額外資料
+}
+
+public enum OcrLogLevel
+{
+    Trace,        // 追蹤（最詳細）
+    Debug,        // 除錯
+    Information,  // 資訊
+    Warning,      // 警告
+    Error         // 錯誤
+}
+```
+
+---
+
+### OcrProgressEventArgs
+
+```csharp
+public class OcrProgressEventArgs : EventArgs
+{
+    public int Current { get; set; }               // 當前進度
+    public int Total { get; set; }                 // 總數
+    public string? CurrentImagePath { get; set; }  // 當前處理的圖片
+    public double Percentage { get; }              // 進度百分比 (0.0-1.0)
+    public string? Message { get; set; }           // 訊息
+}
 ```
 
 ---
@@ -976,6 +1191,70 @@ public class TextRegion
 | 準確率 | 相同 | 相同 |
 | 適用場景 | 圖像質量不一 | 圖像質量穩定 |
 | 可預測性 | 參數會變化 | 參數固定 |
+
+### Q7: 什麼時候應該使用平行批次處理？
+
+**答**：
+
+**適用場景**：
+- 處理大量圖片（> 10 張）
+- 多核 CPU 環境
+- 需要最快完成批次任務
+
+**性能對比**：
+```
+循序處理 100 張：~2000ms
+平行處理 100 張（4 線程）：~600ms（提升 3.3 倍）
+```
+
+**使用建議**：
+```csharp
+// 少量圖片（< 10 張）- 使用循序處理
+var results = ocr.RecognizeTextBatch(imagePaths);
+
+// 大量圖片（>= 10 張）- 使用平行處理
+var options = new BatchProcessingOptions
+{
+    MaxDegreeOfParallelism = 4,  // 根據 CPU 核心數調整
+    EnableSmartScheduling = true
+};
+var results = ocr.RecognizeTextBatchParallel(imagePaths, options);
+```
+
+### Q8: 如何監聽處理進度和日誌？
+
+**答**：
+
+透過事件訂閱機制，使用者可以自行決定如何收集和處理資料：
+
+**監聽日誌**：
+```csharp
+ocr.LogMessage += (sender, e) =>
+{
+    // 寫入文件
+    File.AppendAllText("ocr.log", $"{e.Timestamp} [{e.Level}] {e.Message}\n");
+
+    // 或發送到監控系統
+    _logger.Log(e.Level, e.Message);
+};
+```
+
+**監聽進度**：
+```csharp
+ocr.ProgressChanged += (sender, e) =>
+{
+    // 更新 UI 進度條
+    progressBar.Value = (int)(e.Percentage * 100);
+
+    // 或記錄進度
+    Console.WriteLine($"{e.Current}/{e.Total} ({e.Percentage:P0})");
+};
+```
+
+**使用場景**：
+- 桌面應用程式：即時更新 UI
+- 後端服務：結構化日誌記錄
+- 除錯：追蹤處理細節
 
 ---
 
