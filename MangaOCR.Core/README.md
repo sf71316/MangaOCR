@@ -979,21 +979,6 @@ public class TextRegion
 
 ---
 
-## 更新記錄
-
-> ⚠️ **重要**：當 `MangaOcrService`、`OcrSettings` 或任何公開 API 有變更時，請同步更新此文檔！
-
-### 更新檢查清單
-
-- [ ] 工廠方法是否有新增或修改？
-- [ ] OcrSettings 是否有新增或刪除參數？
-- [ ] 參數的預設值是否有變更？
-- [ ] 自適應模式的推薦邏輯是否有調整？
-- [ ] 效能測試結果是否有更新？
-- [ ] 使用範例是否需要更新？
-
----
-
 ## 授權
 
 此專案使用 PaddleOCR v3.0.1，請遵守其授權條款。
@@ -1005,4 +990,3 @@ public class TextRegion
 - [PaddleOCR 官方文檔](https://github.com/PaddlePaddle/PaddleOCR)
 - [Sdcb.PaddleOCR NuGet](https://www.nuget.org/packages/Sdcb.PaddleOCR)
 - 測試範例：`MangaOCR.Tests/`
-- 使用範例：`MangaOCR/Program.cs`
