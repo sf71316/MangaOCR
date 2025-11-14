@@ -322,6 +322,276 @@ public class OcrIntegrationTests : IDisposable
         // 注意：不刪除圖片，保留供檢視
     }
 
+    /// <summary>
+    /// 測試指定圖片的 OCR 辨識率（使用優化參數）
+    /// </summary>
+    [Fact]
+    public void TestSpecificImage_5jpg_OptimizedParams()
+    {
+        // Arrange - 使用優化參數
+        var imagePath = Path.Combine(Path.GetDirectoryName(_testImagePath)!, "5.jpg");
+
+        if (!File.Exists(imagePath))
+        {
+            Console.WriteLine($"✗ 找不到測試圖片: {imagePath}");
+            return;
+        }
+
+        // 優化參數：方案 1
+        var optimizedSettings = new OcrSettings
+        {
+            Provider = OcrProvider.PaddleOCR,
+            Language = "Japanese",
+            MinConfidence = 0.5f,
+            UsePreprocessing = false,
+            AllowRotateDetection = true,
+            Enable180Classification = true,
+            UnclipRatio = 1.8f,      // 提高擴展比例
+            MaxSize = 1280,          // 提高解析度
+            BoxScoreThreshold = 0.5f, // 降低閾值以檢測更多區域
+            Threshold = 0.3f
+        };
+
+        var factory = new OcrServiceFactory();
+        using var ocrService = factory.CreateOcrService(optimizedSettings);
+        var processor = new ResultProcessor();
+        var orderAnalyzer = new TextOrderAnalyzer();
+        var annotator = new ImageAnnotator();
+
+        Console.WriteLine("=== 測試圖片: 5.jpg（優化參數）===");
+        Console.WriteLine("【使用參數】");
+        Console.WriteLine($"  MaxSize: {optimizedSettings.MaxSize}");
+        Console.WriteLine($"  UnclipRatio: {optimizedSettings.UnclipRatio}");
+        Console.WriteLine($"  BoxScoreThreshold: {optimizedSettings.BoxScoreThreshold}");
+        Console.WriteLine();
+
+        // Act - 執行 OCR
+        var rawResult = ocrService.RecognizeText(imagePath);
+
+        if (!rawResult.Success)
+        {
+            Console.WriteLine($"✗ OCR 識別失敗: {rawResult.ErrorMessage}");
+            return;
+        }
+
+        Console.WriteLine($"✓ OCR 識別完成，耗時: {rawResult.ElapsedMilliseconds}ms");
+        Console.WriteLine();
+
+        // 原始結果統計
+        Console.WriteLine("【原始識別結果】");
+        Console.WriteLine($"  識別區域數: {rawResult.TextRegions.Count}");
+
+        var validRegions = rawResult.TextRegions.Where(r => !float.IsNaN(r.Confidence)).ToList();
+        if (validRegions.Any())
+        {
+            var avgConfidence = validRegions.Average(r => r.Confidence);
+            var highConfidenceCount = validRegions.Count(r => r.Confidence >= 0.7f);
+            var mediumConfidenceCount = validRegions.Count(r => r.Confidence >= 0.5f && r.Confidence < 0.7f);
+            var lowConfidenceCount = validRegions.Count(r => r.Confidence < 0.5f);
+
+            Console.WriteLine($"  平均信心度: {avgConfidence:P1}");
+            Console.WriteLine($"  高信心度區域 (>=70%): {highConfidenceCount}");
+            Console.WriteLine($"  中信心度區域 (50-70%): {mediumConfidenceCount}");
+            Console.WriteLine($"  低信心度區域 (<50%): {lowConfidenceCount}");
+        }
+
+        var nonEmptyCount = rawResult.TextRegions.Count(r => !string.IsNullOrWhiteSpace(r.Text));
+        Console.WriteLine($"  非空白區域: {nonEmptyCount}/{rawResult.TextRegions.Count}");
+        Console.WriteLine();
+
+        // 後處理結果
+        var processedResult = processor.Process(rawResult, minConfidence: optimizedSettings.MinConfidence);
+
+        Console.WriteLine("【後處理結果】");
+        Console.WriteLine($"  處理後區域數: {processedResult.TextRegions.Count}");
+        Console.WriteLine($"  已過濾: {rawResult.TextRegions.Count - processedResult.TextRegions.Count} 個低品質區域");
+
+        if (processedResult.TextRegions.Any())
+        {
+            var avgConfidenceProcessed = processedResult.TextRegions
+                .Where(r => !float.IsNaN(r.Confidence))
+                .Average(r => r.Confidence);
+            Console.WriteLine($"  平均信心度: {avgConfidenceProcessed:P1}");
+        }
+        Console.WriteLine();
+
+        // 顯示識別文字樣本
+        Console.WriteLine("【識別文字樣本（前 15 個）】");
+        var orderedRegions = orderAnalyzer.AssignReadingOrder(
+            processedResult.TextRegions,
+            TextOrderAnalyzer.ReadingDirection.RightToLeftTopToBottom);
+
+        foreach (var item in orderedRegions.Take(15))
+        {
+            Console.WriteLine($"  [{item.ReadingOrder:D2}] {item.Region.Text} (信心度: {item.Region.Confidence:P1})");
+        }
+
+        if (orderedRegions.Count > 15)
+        {
+            Console.WriteLine($"  ... 還有 {orderedRegions.Count - 15} 個區域");
+        }
+        Console.WriteLine();
+
+        // 生成 Debug 圖片
+        var outputDir = Path.GetDirectoryName(imagePath)!;
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var readingOrderPath = Path.Combine(outputDir, $"5_optimized_reading_order_{timestamp}.png");
+        var confidencePath = Path.Combine(outputDir, $"5_optimized_confidence_{timestamp}.png");
+
+        annotator.AnnotateReadingOrder(imagePath, orderedRegions, readingOrderPath);
+        annotator.AnnotateConfidence(imagePath, rawResult.TextRegions, confidencePath);
+
+        Console.WriteLine("【生成 Debug 圖片】");
+        Console.WriteLine($"  ✓ 閱讀順序標註: {Path.GetFileName(readingOrderPath)}");
+        Console.WriteLine($"  ✓ 信心度標註: {Path.GetFileName(confidencePath)}");
+        Console.WriteLine($"  位置: {outputDir}");
+        Console.WriteLine();
+
+        // 與標準參數對比
+        Console.WriteLine("【對比標準參數】");
+        Console.WriteLine("  標準參數結果（MaxSize=1024）：");
+        Console.WriteLine("    - 平均信心度: 82.1%");
+        Console.WriteLine("    - 高信心度區域: 15");
+        Console.WriteLine("    - 處理後區域數: 16");
+        Console.WriteLine("    - 耗時: 1594ms");
+        Console.WriteLine();
+        Console.WriteLine("  優化參數結果（MaxSize=1280）：");
+        Console.WriteLine($"    - 平均信心度: {(validRegions.Any() ? validRegions.Average(r => r.Confidence) : 0):P1}");
+        Console.WriteLine($"    - 高信心度區域: {validRegions.Count(r => r.Confidence >= 0.7f)}");
+        Console.WriteLine($"    - 處理後區域數: {processedResult.TextRegions.Count}");
+        Console.WriteLine($"    - 耗時: {rawResult.ElapsedMilliseconds}ms");
+    }
+
+    /// <summary>
+    /// 測試指定圖片的 OCR 辨識率並生成詳細報告
+    /// </summary>
+    [Fact]
+    public void TestSpecificImage_5jpg()
+    {
+        // Arrange
+        var imagePath = Path.Combine(Path.GetDirectoryName(_testImagePath)!, "5.jpg");
+
+        if (!File.Exists(imagePath))
+        {
+            Console.WriteLine($"✗ 找不到測試圖片: {imagePath}");
+            return;
+        }
+
+        var factory = new OcrServiceFactory();
+        using var ocrService = factory.CreateOcrService(_ocrSettings);
+        var processor = new ResultProcessor();
+        var orderAnalyzer = new TextOrderAnalyzer();
+        var annotator = new ImageAnnotator();
+
+        Console.WriteLine("=== 測試圖片: 5.jpg ===");
+        Console.WriteLine();
+
+        // Act - 執行 OCR
+        var rawResult = ocrService.RecognizeText(imagePath);
+
+        if (!rawResult.Success)
+        {
+            Console.WriteLine($"✗ OCR 識別失敗: {rawResult.ErrorMessage}");
+            return;
+        }
+
+        Console.WriteLine($"✓ OCR 識別完成，耗時: {rawResult.ElapsedMilliseconds}ms");
+        Console.WriteLine();
+
+        // 原始結果統計
+        Console.WriteLine("【原始識別結果】");
+        Console.WriteLine($"  識別區域數: {rawResult.TextRegions.Count}");
+
+        var validRegions = rawResult.TextRegions.Where(r => !float.IsNaN(r.Confidence)).ToList();
+        if (validRegions.Any())
+        {
+            var avgConfidence = validRegions.Average(r => r.Confidence);
+            var highConfidenceCount = validRegions.Count(r => r.Confidence >= 0.7f);
+            var mediumConfidenceCount = validRegions.Count(r => r.Confidence >= 0.5f && r.Confidence < 0.7f);
+            var lowConfidenceCount = validRegions.Count(r => r.Confidence < 0.5f);
+
+            Console.WriteLine($"  平均信心度: {avgConfidence:P1}");
+            Console.WriteLine($"  高信心度區域 (>=70%): {highConfidenceCount}");
+            Console.WriteLine($"  中信心度區域 (50-70%): {mediumConfidenceCount}");
+            Console.WriteLine($"  低信心度區域 (<50%): {lowConfidenceCount}");
+        }
+
+        var nonEmptyCount = rawResult.TextRegions.Count(r => !string.IsNullOrWhiteSpace(r.Text));
+        Console.WriteLine($"  非空白區域: {nonEmptyCount}/{rawResult.TextRegions.Count}");
+        Console.WriteLine();
+
+        // 後處理結果
+        var processedResult = processor.Process(rawResult, minConfidence: _ocrSettings.MinConfidence);
+
+        Console.WriteLine("【後處理結果】");
+        Console.WriteLine($"  處理後區域數: {processedResult.TextRegions.Count}");
+        Console.WriteLine($"  已過濾: {rawResult.TextRegions.Count - processedResult.TextRegions.Count} 個低品質區域");
+
+        if (processedResult.TextRegions.Any())
+        {
+            var avgConfidenceProcessed = processedResult.TextRegions
+                .Where(r => !float.IsNaN(r.Confidence))
+                .Average(r => r.Confidence);
+            Console.WriteLine($"  平均信心度: {avgConfidenceProcessed:P1}");
+        }
+        Console.WriteLine();
+
+        // 顯示識別文字樣本
+        Console.WriteLine("【識別文字樣本（前 10 個）】");
+        var orderedRegions = orderAnalyzer.AssignReadingOrder(
+            processedResult.TextRegions,
+            TextOrderAnalyzer.ReadingDirection.RightToLeftTopToBottom);
+
+        foreach (var item in orderedRegions.Take(10))
+        {
+            Console.WriteLine($"  [{item.ReadingOrder:D2}] {item.Region.Text} (信心度: {item.Region.Confidence:P1})");
+        }
+
+        if (orderedRegions.Count > 10)
+        {
+            Console.WriteLine($"  ... 還有 {orderedRegions.Count - 10} 個區域");
+        }
+        Console.WriteLine();
+
+        // 生成 Debug 圖片
+        var outputDir = Path.GetDirectoryName(imagePath)!;
+        var timestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        var readingOrderPath = Path.Combine(outputDir, $"5_reading_order_{timestamp}.png");
+        var confidencePath = Path.Combine(outputDir, $"5_confidence_{timestamp}.png");
+
+        annotator.AnnotateReadingOrder(imagePath, orderedRegions, readingOrderPath);
+        annotator.AnnotateConfidence(imagePath, rawResult.TextRegions, confidencePath);
+
+        Console.WriteLine("【生成 Debug 圖片】");
+        Console.WriteLine($"  ✓ 閱讀順序標註: {Path.GetFileName(readingOrderPath)}");
+        Console.WriteLine($"  ✓ 信心度標註: {Path.GetFileName(confidencePath)}");
+        Console.WriteLine($"  位置: {outputDir}");
+        Console.WriteLine();
+
+        // 診斷建議
+        Console.WriteLine("【診斷建議】");
+        if (validRegions.Any())
+        {
+            var avgConf = validRegions.Average(r => r.Confidence);
+            if (avgConf < 0.7)
+            {
+                Console.WriteLine("  ⚠ 平均信心度偏低，建議調整參數：");
+                Console.WriteLine("    - 提高 MaxSize 至 1280 或 1920");
+                Console.WriteLine("    - 提高 UnclipRatio 至 1.8 或 2.0");
+                Console.WriteLine("    - 降低 BoxScoreThreshold 至 0.5");
+            }
+
+            var lowConfPct = (double)validRegions.Count(r => r.Confidence < 0.5f) / validRegions.Count;
+            if (lowConfPct > 0.3)
+            {
+                Console.WriteLine("  ⚠ 低信心度區域過多（>30%），可能原因：");
+                Console.WriteLine("    - 圖片模糊或解析度不足");
+                Console.WriteLine("    - 文字過小或字體特殊");
+                Console.WriteLine("    - 背景干擾或對比度不足");
+            }
+        }
+    }
+
     public void Dispose()
     {
         // Cleanup if needed
